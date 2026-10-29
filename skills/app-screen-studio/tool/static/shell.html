@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アプリ画面編集室</title>
+<link rel="stylesheet" href="/__screen_studio__/shell.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><strong>画面編集室</strong><span id="projectName" class="muted"></span></div>
+  <div class="group" role="group" aria-label="画面サイズ">
+    <button class="btn vp" data-vp="phone" title="幅390px">スマホ</button>
+    <button class="btn vp" data-vp="tablet" title="幅820px">タブレット</button>
+    <button class="btn vp" data-vp="pc" title="幅1280px">PC</button>
+  </div>
+  <div class="group" role="group" aria-label="モード">
+    <button class="btn mode" data-mode="edit" title="クリックで要素を選んで編集">編集</button>
+    <button class="btn mode" data-mode="interact" title="アプリのボタンや入力を普通に操作">操作確認</button>
+  </div>
+  <div class="group">
+    <button class="btn" id="undoBtn" title="元に戻す (Ctrl+Z)">元に戻す</button>
+    <button class="btn" id="redoBtn" title="やり直す (Ctrl+Y)">やり直す</button>
+  </div>
+  <div class="spacer"></div>
+  <span id="statusBadge" class="badge">未保存の変更なし</span>
+  <button class="btn primary" id="saveBtn">保存</button>
+  <button class="btn" id="copyBtn" title="指示文をコピーし、下のAIへの指示欄にも追加（送信はしません）">AIへ渡す指示をコピー</button>
+</header>
+<div class="notice" id="notice" hidden></div>
+<main class="main">
+  <section class="stage" id="stage">
+    <div class="screenPath" id="screenPath"></div>
+    <div class="frameWrap" id="frameWrap">
+      <iframe id="frame" title="編集中の画面"></iframe>
+    </div>
+  </section>
+  <aside class="panel" id="panel" aria-label="編集パネル">
+    <fieldset id="fsMaterial" disabled><legend>材質プリセット</legend>
+      <label>適用先 <select id="materialScope">
+        <option value="selected">選択中の要素</option>
+        <option value="parent">選択中の親枠</option>
+        <option value="screen">画面全体の背景</option>
+      </select></label>
+      <label>文字色も材質に合わせる <input type="checkbox" id="materialTextColor" checked></label>
+      <div class="presetGrid" id="materialPresets" role="group" aria-label="材質を選んで適用"></div>
+      <label>色の数 <select id="materialColorCount"><option value="1">単色</option><option value="2">2色グラデーション</option><option value="3">3色グラデーション</option><option value="4">4色グラデーション</option></select></label>
+      <label id="materialGradientRow" hidden>色の広がり <select id="materialGradient"><option value="linear">線形（一定の向き）</option><option value="radial">放射（中心から外側）</option></select></label>
+      <div class="materialColors" id="materialColors">
+        <label>色1 <input type="color" id="materialColor1" value="#8fa7be"></label>
+        <label hidden>色2 <input type="color" id="materialColor2" value="#9872dc"></label>
+        <label hidden>色3 <input type="color" id="materialColor3" value="#efad83"></label>
+        <label hidden>色4 <input type="color" id="materialColor4" value="#62d2c0"></label>
+      </div>
+      <label id="materialAngleRow" hidden>色の向き <input type="range" id="materialAngle" min="0" max="360" value="135" step="1"></label>
+      <div class="hint" id="materialAngleValue" hidden>135度</div>
+      <label>光沢 <input type="range" id="materialGloss" min="0" max="100" value="65" step="1"></label>
+      <label>ガラスの透明度 <input type="range" id="materialTransmission" min="0" max="100" value="72" step="1" disabled></label>
+      <label>背景のぼかし(px) <input type="range" id="materialBlur" min="0" max="32" value="8" step="1" disabled></label>
+      <div class="hint" id="materialValues">光沢65 / 透明度72 / ぼかし8px</div>
+      <div class="materialPreviewStage"><div id="materialPreview" class="materialPreview">材質の見本</div></div>
+      <div class="row wrap"><button class="btn small" id="materialApply">この材質を反映</button><button class="btn small" id="materialDefaults">標準色へ戻す</button></div>
+      <div class="hint">材質を押すと反映。枠内はその枠を選択するか「親枠」を指定。位置・大きさは保持。「元に戻す」で取り消せます。</div>
+      <div class="hint" id="materialStatus" role="status"></div>
+    </fieldset>
+    <fieldset id="fsAdd"><legend>追加</legend>
+      <div class="row wrap">
+        <button class="btn small" data-add="rect">四角</button>
+        <button class="btn small" data-add="ellipse">円</button>
+        <button class="btn small" data-add="line">線</button>
+        <button class="btn small" data-add="text">テキスト</button>
+        <button class="btn small" id="addImageBtn">画像を取り込む</button>
+      </div>
+      <input type="file" id="imageFile" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+      <div class="hint">追加した図形・画像は画面の最後に置かれます。長押しして好きな位置へ。</div>
+    </fieldset>
+    <div class="panelEmpty" id="panelEmpty">
+      編集モードで画面の要素をクリックすると、ここで文字・色・余白などを変えられます。<br>
+      画面外の余白からドラッグして囲むと複数選択。選んだ一つを約0.5秒長押ししてまとめて移動。右と下の○でサイズ変更。
+    </div>
+    <div id="panelBody" hidden>
+      <div class="selInfo"><span id="selTag"></span> <span id="selHint" class="muted"></span></div>
+      <div class="row">
+        <button class="btn small" id="selParent">親を選ぶ</button>
+        <button class="btn small" id="selReset">この要素を元に戻す</button>
+      </div>
+      <div class="row">
+        <button class="btn small" id="dupBtn" title="Ctrl+D">複製</button>
+        <button class="btn small" id="delBtn" title="Delete">削除</button>
+      </div>
+      <div class="hint" id="multiHint" hidden></div>
+      <fieldset><legend>重なり順</legend>
+        <div class="row wrap">
+          <button class="btn small" data-layer="front">最前面へ</button>
+          <button class="btn small" data-layer="back">最背面へ</button>
+          <button class="btn small" data-layer="forward">一つ前へ</button>
+          <button class="btn small" data-layer="backward">一つ後ろへ</button>
+        </div>
+        <div class="hint">同じ親の中の、位置を指定した要素どうしの順番を変えます。</div>
+      </fieldset>
+      <fieldset id="fsAlign" hidden><legend>整列(複数選択)</legend>
+        <div class="row wrap">
+          <button class="btn small" data-align="left">左揃え</button>
+          <button class="btn small" data-align="center">左右中央</button>
+          <button class="btn small" data-align="right">右揃え</button>
+          <button class="btn small" data-align="top">上揃え</button>
+          <button class="btn small" data-align="middle">上下中央</button>
+          <button class="btn small" data-align="bottom">下揃え</button>
+          <button class="btn small" data-align="distH">横に均等</button>
+          <button class="btn small" data-align="distV">縦に均等</button>
+        </div>
+        <div class="hint">画面外の余白から囲んで複数選択。Shift(またはCtrl)を押して囲むと追加選択。クリックでも追加できます。色や余白の変更は選んだ全部に効きます。</div>
+      </fieldset>
+
+      <fieldset id="fsText"><legend>文字</legend>
+        <textarea id="textInput" rows="3" aria-label="文字の内容"></textarea>
+        <div class="hint" id="textHint"></div>
+      </fieldset>
+
+      <fieldset><legend>文字の見た目</legend>
+        <label>色 <input type="color" data-prop="color"></label>
+        <label>大きさ(px) <input type="number" data-prop="fontSize" data-unit="px" min="1" max="400"></label>
+        <label>太さ
+          <select data-prop="fontWeight">
+            <option value="">そのまま</option><option value="300">細い</option>
+            <option value="400">ふつう</option><option value="500">やや太い</option>
+            <option value="700">太い</option><option value="900">極太</option>
+          </select></label>
+        <label>字体
+          <input type="text" data-prop="fontFamily" list="fontList" placeholder="例: Yu Gothic, sans-serif">
+          <datalist id="fontList"></datalist></label>
+        <label>配置
+          <select data-prop="textAlign">
+            <option value="">そのまま</option><option value="left">左</option>
+            <option value="center">中央</option><option value="right">右</option>
+          </select></label>
+        <label>行の高さ <input type="number" step="0.1" data-prop="lineHeight" data-unit="" min="0" max="10"></label>
+      </fieldset>
+
+      <fieldset id="fsGlow" disabled><legend>文字の発光</legend>
+        <div class="glowPresets" id="glowPresets" role="group" aria-label="文字の光を選ぶ"></div>
+        <label>光の色 <input type="color" id="glowColor" value="#55ccff"></label>
+        <label>光の強さ <input type="range" id="glowStrength" min="0" max="100" value="50" step="1"></label>
+        <div class="hint"><output id="glowValue" for="glowStrength">50 / 100</output>（0で発光なし）</div>
+        <div id="glowPreview" class="glowPreview" aria-label="文字の発光プレビュー">光る文字の見本</div>
+        <button class="btn small" id="glowOff">発光を外す</button>
+        <div class="hint">選択中の文字へ反映。ボタンを選ぶと中の文字にも効きます。文字の色・光の色は別々に調整できます。</div>
+      </fieldset>
+
+      <fieldset><legend>背景・図形</legend>
+        <label>背景色 <input type="color" data-prop="backgroundColor">
+          <button class="btn small" data-clear="backgroundColor">透明</button></label>
+        <label>透明度 <input type="range" data-prop="opacity" min="0" max="1" step="0.05"></label>
+        <label>角丸(px) <input type="number" data-group="radius" min="0" max="999">
+          <button class="btn small" id="roundBtn">丸にする</button></label>
+        <label>枠線の太さ(px) <input type="number" data-group="borderWidth" min="0" max="99"></label>
+        <label>枠線の種類
+          <select data-group="borderStyle">
+            <option value="">そのまま</option><option value="none">なし</option>
+            <option value="solid">実線</option><option value="dashed">破線</option>
+            <option value="dotted">点線</option>
+          </select></label>
+        <label>枠線の色 <input type="color" data-group="borderColor"></label>
+        <label>影 <input type="text" data-prop="boxShadow" placeholder="例: 0 2px 8px rgba(0,0,0,.2)"></label>
+        <div id="svgOnly">
+          <label>塗り(SVG) <input type="color" data-prop="fill"></label>
+          <label>線(SVG) <input type="color" data-prop="stroke"></label>
+          <label>線の太さ(SVG) <input type="number" data-prop="strokeWidth" data-unit="" min="0" max="99" step="0.5"></label>
+        </div>
+      </fieldset>
+
+      <fieldset><legend>余白(px)</legend>
+        <label>内側 <input type="number" data-group="padding" min="0" max="999"></label>
+        <label>外側 <input type="number" data-group="margin" min="-999" max="999"></label>
+      </fieldset>
+
+      <fieldset><legend>大きさ・位置</legend>
+        <label>幅(px) <input type="number" data-prop="width" data-unit="px" min="0" max="9999"></label>
+        <label>高さ(px) <input type="number" data-prop="height" data-unit="px" min="0" max="9999"></label>
+        <label>ずらし 横(px) <input type="number" id="shiftX" step="1"></label>
+        <label>ずらし 縦(px) <input type="number" id="shiftY" step="1"></label>
+        <label>回転(度) <input type="number" data-prop="rotate" data-unit="deg" min="-360" max="360" step="1"></label>
+        <div class="hint">画面上でドラッグしても動かせます。</div>
+      </fieldset>
+
+      <fieldset id="fsImage"><legend>画像</legend>
+        <label>画像の場所(URL) <input type="text" data-attr="src" placeholder="例: images/logo.png"></label>
+        <label>代替テキスト <input type="text" data-attr="alt"></label>
+        <label>収め方
+          <select data-prop="objectFit">
+            <option value="">そのまま</option><option value="cover">はみ出して埋める</option>
+            <option value="contain">全体を収める</option><option value="fill">引き伸ばす</option>
+          </select></label>
+        <button class="btn small" id="replaceImageBtn">画像ファイルを選んで差し替え</button>
+        <div class="hint">取り込んだ画像は成果物フォルダ(画像/画面編集)へ保存され、保存JSONからAIが辿れます。</div>
+      </fieldset>
+    </div>
+  </aside>
+</main>
+<footer class="aiBar" id="aiBar">
+  <div class="aiHead"><strong>AIへ依頼</strong><span id="aiState" class="muted"></span></div>
+  <div class="aiBody">
+    <div class="aiLeft">
+      <textarea id="aiPrompt" rows="3" placeholder="AIへの依頼を書く(Enterは改行。送るときは右の「AIへ送信」を押す)。画像は貼り付けでも添付できます。"></textarea>
+      <div class="thumbs" id="aiThumbs"></div>
+    </div>
+    <div class="aiBtns">
+      <button class="btn" id="shotBtn" title="いま見えている画面(iframe部分だけ)を撮影して添付">画面をスクショ</button>
+      <button class="btn" id="attachBtn">画像を添付</button>
+      <input type="file" id="aiFile" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+      <button class="btn primary" id="aiSendBtn">AIへ送信</button>
+      <button class="btn" id="aiExportBtn" title="外部へ送らず、指示・編集JSON・添付パスを依頼文ファイルへ保存">AI用ファイルを保存</button>
+    </div>
+  </div>
+  <div class="hint" id="aiNote"></div>
+</footer>
+<div class="toast" id="toast" hidden></div>
+<div class="saveInfo" id="saveInfo" hidden>
+  <div><strong>保存しました</strong>(見た目の編集記録のみ。<strong>製品コードへは未反映</strong>です)</div>
+  <div class="path" id="savePath"></div>
+  <div class="hint">このJSONをAIに読ませて、元の画面ソースへ反映してもらいます。「AIへ渡す指示をコピー」を使うと依頼文が作れます。</div>
+  <button class="btn small" id="saveInfoClose">閉じる</button>
+</div>
+<script src="/__screen_studio__/shell.js"></script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>デモ画面</title>
+<link rel="stylesheet" href="demo.css">
+</head>
+<body>
+<header class="top">
+  <img id="logo" class="logo" src="logo.svg" alt="ロゴ">
+  <h1 id="title" data-edit-id="demo-title" data-source="demo/index.html">家計かんたんメモ</h1>
+</header>
+<main class="wrap">
+  <section class="card" id="summary">
+    <h2>今月のまとめ</h2>
+    <p class="lead">支出は <b>42,300円</b> です。先月より少なめです。</p>
+    <p class="note" id="note">※ このデモは画面編集室の練習用です。</p>
+    <button id="countBtn" class="primary">記録する (0)</button>
+    <span id="result" class="result"></span>
+  </section>
+  <section class="card">
+    <h2>カテゴリ</h2>
+    <ul class="chips">
+      <li class="chip">食費</li>
+      <li class="chip">交通費</li>
+      <li class="chip">日用品</li>
+    </ul>
+    <svg class="shapes" width="180" height="60" viewBox="0 0 180 60" aria-label="図形の例">
+      <rect id="svgRect" x="4" y="8" width="60" height="44" rx="6" fill="#3d6b5e"></rect>
+      <circle id="svgCircle" cx="110" cy="30" r="22" fill="#d98e04" stroke="#8a5a00" stroke-width="2"></circle>
+    </svg>
+  </section>
+  <form id="memoForm" class="card">
+    <h2>メモ</h2>
+    <label>内容 <input type="text" name="memo" placeholder="例: 昼ごはん"></label>
+    <button type="submit">送信</button>
+  </form>
+</main>
+<script src="demo.js"></script>
+</body>
+</html>

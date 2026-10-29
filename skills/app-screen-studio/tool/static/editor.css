@@ -1,0 +1,24 @@
+/* 画面側(製品ページ)に入る最小限のスタイル + 選択枠(shadow root内でも読み込む) */
+html[data-ss-mode="edit"], html[data-ss-mode="edit"] body { cursor: default; }
+html[data-ss-mode="edit"] * { cursor: default !important; user-select: none; -webkit-user-select: none; }
+html[data-ss-mode="edit"] [contenteditable] { cursor: text !important; user-select: text; -webkit-user-select: text;
+  outline: 2px dashed #3d6b5e; outline-offset: 2px; }
+
+:host { all: initial; position: fixed; left: 0; top: 0; width: 0; height: 0; z-index: 2147483647; }
+:host .hover, :host .box { position: fixed; display: none; pointer-events: none; box-sizing: border-box; }
+:host .hover { border: 1px dashed #3d6b5e; background: rgba(61,107,94,.08); }
+:host .box { border: 2px solid #3d6b5e; box-shadow: 0 0 0 1px rgba(255,255,255,.7); }
+:host .chip { position: absolute; left: -2px; top: -22px; padding: 1px 6px; font: 11px/18px system-ui, sans-serif;
+  background: #3d6b5e; color: #fff; border-radius: 3px 3px 0 0; white-space: nowrap; pointer-events: none; }
+:host .handle { position: absolute; width: 12px; height: 12px; background: #fff; border: 2px solid #3d6b5e;
+  border-radius: 50%; pointer-events: auto; box-sizing: border-box; }
+:host .h-e { right: -7px; top: calc(50% - 6px); cursor: ew-resize; }
+:host .h-s { bottom: -7px; left: calc(50% - 6px); cursor: ns-resize; }
+:host .h-se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+:host .h-r { left: calc(50% - 6px); top: -30px; cursor: grab; background: #3d6b5e; }
+:host .stem { position: absolute; left: calc(50% - 1px); top: -24px; width: 2px; height: 24px; background: #3d6b5e; pointer-events: none; }
+:host .box.extra { border: 2px solid #6f9a8c; }
+:host .box.multi .handle, :host .box.multi .stem { display: none; }
+
+html[data-ss-mode="edit"] * { touch-action: none; }
+html[data-ss-mode="edit"][data-ss-drag-ready] * { cursor: grabbing !important; }

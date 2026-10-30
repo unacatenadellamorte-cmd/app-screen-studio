@@ -20,6 +20,7 @@
   var state = { dirty: false, canUndo: false, canRedo: false, count: 0 };
   var sel = null, selCount = 0, screen = { path: '', title: '' }, lastSave = null, pendingCollect = {}, collectSeq = 0;
   var toastTimer = null;
+  var objectMotionCatalog = [], objectMotionPeer = null;
 
   // ------------------------------------------------------------ 通信
   function send(msg) { if (frame.contentWindow) frame.contentWindow.postMessage(msg, location.origin); }
@@ -42,6 +43,18 @@
       fillCharacterOptions($('characterTarget'), ['選択してください'].concat(m.items || []));
     }
     else if (m.ss === 'character') renderCharacter(m);
+    else if (m.ss === 'objectMotionCatalog') {
+      objectMotionCatalog = m.items || []; var list = $('objectMotionPreset'); list.replaceChildren();
+      ['画面遷移', 'UI・スクロール'].forEach(function (name) {
+        var group = document.createElement('optgroup'); group.label = name;
+        objectMotionCatalog.filter(function (item) { return item.group === name; }).forEach(function (item) { var option = document.createElement('option'); option.value = item.id; option.textContent = item.name; group.appendChild(option); });
+        list.appendChild(group);
+      });
+      showMotionDescription();
+    }
+    else if (m.ss === 'objectMotionSelection') renderMotionSelection(m);
+    else if (m.ss === 'objectMotionPeerChosen') { objectMotionPeer = m.peer; $('objectMotionPeerName').textContent = '相手：' + m.label; }
+    else if (m.ss === 'objectMotionResult') { $('objectMotionStatus').textContent = m.text; $('objectMotionStatus').classList.toggle('warn', !m.ok); }
     else if (m.ss === 'toast') toast(m.text);
     else if (m.ss === 'edits') { var cb = pendingCollect[m.id]; delete pendingCollect[m.id]; if (cb) cb(m); }
     else if (m.ss === 'reapplied') onReapplied(m);
@@ -92,6 +105,36 @@
   }
   ['characterMotion', 'characterStrength', 'characterDuration', 'characterPlaying'].forEach(function (id) { $(id).addEventListener('change', applyCharacterMotion); });
 
+  function showMotionDescription() {
+    var item = objectMotionCatalog.find(function (p) { return p.id === $('objectMotionPreset').value; });
+    $('objectMotionDescription').textContent = item ? item.note + (item.peer ? '。相手のオブジェクトを指定してください。' : '') : '';
+  }
+  function renderMotionSelection(m) {
+    $('fsObjectMotion').disabled = !m.active;
+    $('objectMotionTarget').textContent = m.active ? '対象：' + m.label : '一つのオブジェクトを選んでください。';
+    $('objectMotionStatus').textContent = '';
+    var c = m.config || { preset: 'slide', duration: 1000, delay: 0, strength: 1, direction: 'left', trigger: 'click', repeat: false };
+    $('objectMotionPreset').value = c.preset; $('objectMotionDirection').value = c.direction;
+    $('objectMotionDuration').value = c.duration / 1000; $('objectMotionDelay').value = c.delay / 1000;
+    $('objectMotionStrength').value = c.strength; $('objectMotionTrigger').value = c.trigger;
+    $('objectMotionRepeat').checked = c.repeat; objectMotionPeer = c.peer || null;
+    $('objectMotionPeerName').textContent = objectMotionPeer ? '相手：' + objectMotionPeer.selector : '相手：なし';
+    showMotionDescription();
+  }
+  $('objectMotionBtn').addEventListener('click', function () { setMode('edit'); $('fsObjectMotion').hidden = false; $('panel').scrollTop = 0; send({ ss: 'objectMotionOpen' }); });
+  $('objectMotionPreset').addEventListener('change', showMotionDescription);
+  $('objectMotionPeer').addEventListener('click', function () { send({ ss: 'objectMotionPeer' }); });
+  $('objectMotionPeerClear').addEventListener('click', function () { objectMotionPeer = null; $('objectMotionPeerName').textContent = '相手：なし'; });
+  $('objectMotionApply').addEventListener('click', function () {
+    var duration = Number($('objectMotionDuration').value), delay = Number($('objectMotionDelay').value);
+    if (!Number.isFinite(duration) || duration < .1 || duration > 30 || !Number.isFinite(delay) || delay < 0 || delay > 10) { $('objectMotionStatus').textContent = '時間は0.1〜30秒、待ち時間は0〜10秒で入力してください。'; return; }
+    send({ ss: 'objectMotionApply', config: { preset: $('objectMotionPreset').value, duration: duration * 1000, delay: delay * 1000,
+      strength: Number($('objectMotionStrength').value), direction: $('objectMotionDirection').value,
+      trigger: $('objectMotionTrigger').value, repeat: $('objectMotionRepeat').checked, peer: objectMotionPeer } });
+  });
+  $('objectMotionStop').addEventListener('click', function () { send({ ss: 'objectMotionStop' }); $('objectMotionStatus').textContent = '再生を停止しました。設定は保持しています。'; });
+  $('objectMotionRemove').addEventListener('click', function () { send({ ss: 'objectMotionRemove' }); });
+
   // ------------------------------------------------------------ 起動
   function init() {
     var q = new URLSearchParams(location.search);
@@ -103,6 +146,8 @@
       if (!s.ok) { toast('セッションを取得できません'); return; }
       session = s;
       var caps = s.capabilities || {};
+      $('objectMotionBtn').disabled = !caps.object_motion;
+      $('objectMotionBtn').title = caps.object_motion ? '図鑑の28種類から動きを選ぶ' : '未保存の内容を保護して画面編集室のサーバーを再起動してください';
       $('characterBtn').disabled = !caps.character_motion;
       $('characterBtn').title = caps.character_motion ? '全体・部品・動きを編集' : '未保存の内容を保護して画面編集室のサーバーを再起動してください';
       $('fsMaterial').disabled = !caps.material_colors;
@@ -122,6 +167,7 @@
     screen = { path: m.path, title: m.title };
     $('screenPath').textContent = '画面: ' + m.path + (m.title ? '(' + m.title + ')' : '');
     sel = null; renderPanel(); renderCharacter({ active: false, index: -1, parts: [] });
+    renderMotionSelection({ active: false });
     if (!$('fsCharacter').hidden) send({ ss: 'characterOpen' });
     send({ ss: 'mode', mode: mode });
     if (m.path !== currentPath) { currentPath = m.path; checkSaved(); }
@@ -286,6 +332,7 @@
       'before→afterの差分(text / style / attrs)を元ソースへ適用してください。source情報があればそれを優先します。' +
       '一致しない要素は推測で当てず報告してください。反映後は画面を再表示して確認します。\n' +
       '動き: animationNameがstudio-で始まる場合は、画面スキル同梱のstatic/character-motion.cssから該当する@keyframesも製品へ取り込んでください。\n' +
+      'オブジェクトの動き: data-studio-motionの設定と、同梱static/object-motion.jsを製品へ反映するか、アプリの仕組みに移植してください。画面遷移の行き先も実装へ結んで確認します。\n' +
       '注意: このJSONは見た目の編集記録で、製品コードには未反映です。';
     var prompt = $('aiPrompt');
     // 入力済みの文章は保持し、同じ保存内容の連打では重複させない。

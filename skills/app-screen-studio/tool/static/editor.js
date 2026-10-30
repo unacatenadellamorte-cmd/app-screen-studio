@@ -24,7 +24,7 @@
     'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius'];
   ['padding', 'margin'].forEach(function (p) { SIDES.forEach(function (s) { STYLE_KEYS.push(p + s); }); });
   SIDES.forEach(function (s) { STYLE_KEYS.push('border' + s + 'Width', 'border' + s + 'Color', 'border' + s + 'Style'); });
-  var ATTR_KEYS = ['src', 'alt'];
+  var ATTR_KEYS = ['src', 'alt', 'data-studio-motion'];
   var SOURCE_ATTRS = ['data-source', 'data-source-file', 'data-source-line', 'data-component', 'data-src-file'];
   var NON_TEXT_TAGS = /^(img|input|textarea|select|svg|script|style|br|hr|canvas|video|audio|iframe|option)$/i;
   var SAFE_IMG_SRC = /^\s*(javascript|vbscript|data|file|blob):/i;
@@ -32,6 +32,7 @@
   var mode = 'edit';
   var characterTargets = [], characterRoot = null, characterParts = [], characterPicking = false;
   var CHARACTER_MARK = '[data-character],[data-edit-role="character"]';
+  var motionPicking = null;
   var selection = [];                 // 選択中の要素(最後が主)
   var hoverEl = null;
   var editing = null;                 // {el, before}
@@ -57,6 +58,19 @@
     if (!m || typeof m !== 'object' || typeof m.ss !== 'string') return;
     switch (m.ss) {
       case 'mode': setMode(m.mode === 'interact' ? 'interact' : 'edit'); break;
+      case 'objectMotionOpen':
+        if (window.ScreenStudioMotion) post({ ss: 'objectMotionCatalog', items: window.ScreenStudioMotion.catalog });
+        else toast('動きの準備中です。少し待ってからもう一度押してください');
+        sendMotionSelection(); break;
+      case 'objectMotionPeer':
+        if (primary()) { motionPicking = primary(); toast('相手のオブジェクトをクリック。Escで中止'); }
+        else toast('先に動きを付けるオブジェクトを選んでください');
+        break;
+      case 'objectMotionApply': setObjectMotion(m.config); break;
+      case 'objectMotionStop': if (window.ScreenStudioMotion) window.ScreenStudioMotion.stopAll(); break;
+      case 'objectMotionRemove':
+        if (primary()) { setLive(primary(), 'attr', 'data-studio-motion', null); commitSession(); }
+        break;
       case 'characterOpen': openCharacters(); break;
       case 'characterPick': characterPicking = true; toast('画面上のキャラクターをクリック。Escで中止'); break;
       case 'characterSelect':
@@ -274,6 +288,7 @@
     });
     Object.keys(attrs).forEach(function (k) {
       if (ATTR_KEYS.indexOf(k) === -1 || typeof attrs[k] !== 'string' || attrs[k].length > 2000) return;
+      if (k === 'data-studio-motion') { setObjectMotion(attrs[k]); return; }
       if (k === 'src' && SAFE_IMG_SRC.test(attrs[k])) { toast('画像のURLに使えない形式です'); return; }
       if (p.localName !== 'img') { toast('画像の場所は img 要素だけ変えられます'); return; }
       setLive(p, 'attr', k, attrs[k]);
@@ -630,6 +645,26 @@
     var p = primary();
     post({ ss: 'selection', count: selection.length, info: p && p.isConnected ? describe(p) : null });
     sendCharacter();
+    sendMotionSelection();
+  }
+  function sendMotionSelection() {
+    var p = primary(), config = null;
+    if (p && p.hasAttribute('data-studio-motion')) {
+      try { config = JSON.parse(p.getAttribute('data-studio-motion')); } catch (e) { /* 不正な設定を実行しない。 */ }
+    }
+    post({ ss: 'objectMotionSelection', active: !!p && selection.length === 1, label: p ? characterLabel(p) : '', config: config });
+  }
+  function setObjectMotion(config) {
+    var p = primary(), runtime = window.ScreenStudioMotion;
+    if (!p || selection.length !== 1 || !runtime) { toast('一つのオブジェクトを選んでください'); return; }
+    try {
+      config = runtime.validate(config);
+      // 先に再生可能か検査し、無効な設定を保存しない。
+      runtime.play(p, config); runtime.stop(p);
+      setLive(p, 'attr', 'data-studio-motion', JSON.stringify(config)); commitSession();
+      // 属性監視が前の再生を止めた後に、確認用の再生を開始する。
+      setTimeout(function () { if (!p.isConnected) return; try { runtime.play(p, config); post({ ss: 'objectMotionResult', ok: true, text: '設定を反映して再生しました（製品コード未反映）' }); } catch (e) { toast(e.message); } }, 0);
+    } catch (e) { post({ ss: 'objectMotionResult', ok: false, text: e.message }); }
   }
   // キャラクターも通常の選択・履歴・保存経路を使う。
   function characterLabel(el) {
@@ -720,6 +755,7 @@
     if (editing) endTextEdit(true);
     var atomic = 'button,[role="button"],a,input,textarea,select,img,svg';
     var candidates = Array.prototype.filter.call(document.body.querySelectorAll('*'), function (el) {
+      if (el.closest('[data-studio-motion-transient]')) return false;
       if (el === host || (host && host.contains(el)) || /^(script|style|link|meta|noscript|option)$/i.test(el.localName)) return false;
       if (el.parentElement && el.parentElement.closest('svg')) return false;
       var cs = getComputedStyle(el), b = el.getBoundingClientRect();
@@ -761,6 +797,12 @@
     if (editing && editing.el.contains(e.target)) return;   // 編集中の文字内はそのまま
     e.preventDefault(); e.stopPropagation();
     var t = pickTarget(e.target);
+    if (motionPicking) {
+      var origin = motionPicking; motionPicking = null;
+      if (!t || !origin.isConnected || t === document.body || t === origin || t.contains(origin) || origin.contains(t)) { toast('親子関係のない別の要素を選んでください'); return; }
+      var peer = { selector: selectorFor(t), tag: t.localName };
+      select(origin, false); post({ ss: 'objectMotionPeerChosen', peer: peer, label: characterLabel(t) }); return;
+    }
     if (characterPicking) {
       var root = t && (t.closest(CHARACTER_MARK) || t.closest('svg,img,canvas') || t);
       if (root && root !== document.body && characterVisible(root)) {
@@ -819,6 +861,7 @@
   }
   function onPointerMove(e) {
     if (mode !== 'edit') return;
+    if (motionPicking && e.key === 'Escape') { motionPicking = null; e.preventDefault(); toast('相手の選択を中止しました'); return; }
     if (!drag) {
       if (e.composedPath().indexOf(host) !== -1 || editing) return;
       var t = pickTarget(e.target);
@@ -898,6 +941,12 @@
 
   function setMode(m) {
     mode = m;
+    motionPicking = null;
+    if (window.ScreenStudioMotion) {
+      window.ScreenStudioMotion.stopAll();
+      document.documentElement.setAttribute('data-ss-mode', m);
+      document.querySelectorAll('[data-studio-motion]').forEach(window.ScreenStudioMotion.bind);
+    }
     if (m !== 'edit') characterPicking = false;
     if (m !== 'edit') { clearHold(); cancelSession(); drag = null; if (editing) endTextEdit(true); hoverEl = null; }
     document.documentElement.setAttribute('data-ss-mode', m);
@@ -952,6 +1001,9 @@
 
   // ------------------------------------------------------------ 初期化
   function init() {
+    var motionScript = document.createElement('script'); motionScript.src = PREFIX + '/object-motion.js';
+    motionScript.onload = function () { post({ ss: 'objectMotionCatalog', items: window.ScreenStudioMotion.catalog }); };
+    document.head.appendChild(motionScript);
     var motionSheet = document.createElement('link');
     motionSheet.rel = 'stylesheet'; motionSheet.href = PREFIX + '/character-motion.css';
     document.head.appendChild(motionSheet);

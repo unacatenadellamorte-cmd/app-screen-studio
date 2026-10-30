@@ -72,7 +72,8 @@ ALLOWED_STYLE_KEYS = frozenset(
     + [f"padding{s}" for s in _SIDES] + [f"margin{s}" for s in _SIDES]
     + [f"border{s}Width" for s in _SIDES] + [f"border{s}Color" for s in _SIDES]
     + [f"border{s}Style" for s in _SIDES])
-ALLOWED_ATTR_KEYS = frozenset(["src", "alt"])
+ALLOWED_ATTR_KEYS = frozenset(["src", "alt", "data-studio-motion"])
+MOTION_PRESETS = frozenset("slide push pop fade crossfade fadethrough zoom shared container axis reveal circular flip curl scale ripple bounce spring shake pulse morph expand stagger parallax inertia overscroll snap shimmer".split())
 EDIT_OPS = ("modify", "add", "duplicate", "delete")
 SHAPES = ("rect", "ellipse", "line", "text", "image")
 ASSET_URL_PREFIX = PREFIX + "/assets/"
@@ -217,6 +218,21 @@ def _clean_attrs(d, label):
     for k, v in d.items():
         _chk(k in ALLOWED_ATTR_KEYS, f"許可されない属性: {str(k)[:40]}")
         _chk(_is_str(v, 2000), f"属性値が長すぎる: {k}")
+        if k == "data-studio-motion" and v:
+            try:
+                motion = json.loads(v)
+            except (ValueError, TypeError):
+                raise StudioError(400, "bad_payload", "動きの設定が不正")
+            _chk(isinstance(motion, dict) and not set(motion) - {"preset", "duration", "delay", "strength", "direction", "trigger", "repeat", "peer"}, "動きの項目が不正")
+            _chk(isinstance(motion.get("preset"), str) and motion["preset"] in MOTION_PRESETS, "未対応の動き")
+            for prop, low, high in [("duration", 100, 30000), ("delay", 0, 10000), ("strength", .25, 2)]:
+                num = motion.get(prop)
+                _chk(type(num) in (int, float) and math.isfinite(num) and low <= num <= high, "動きの時間か強さが範囲外")
+            _chk(motion.get("direction") in ("left", "right", "up", "down") and motion.get("trigger") in ("load", "click", "hover", "scroll") and type(motion.get("repeat")) is bool, "動きの向きか条件が不正")
+            if motion.get("peer") is not None:
+                peer = motion["peer"]
+                _chk(isinstance(peer, dict) and set(peer) == {"selector", "tag"}, "相手の指定が不正")
+                _clean_target(peer, "動きの相手")
         if k == "src" and v:
             low = v.strip().lower()
             _chk(_SAFE_SRC_RE.match(v) is not None, "画像URLに使えない文字がある")
@@ -590,6 +606,7 @@ class StudioState:
                   "1. 編集JSONがあれば読み、各 edit の target(edit_id → id → selector)と before/after を元ソースへ反映する。",
                   "2. 一致しない要素は推測で当てず報告する。",
                   "キャラクターの animationName が studio- で始まる場合、次のCSSから該当する @keyframes も製品側へ取り込む: " + os.path.join(STATIC_DIR, "character-motion.css"),
+                  "data-studio-motion は動きの設定。次の再生部品も製品へ取り込むか、同じ動きをアプリの仕組みへ移植する: " + os.path.join(STATIC_DIR, "object-motion.js") + "。画面遷移先やナビゲーションは現在の実装に結び、単なるプレビューを製品反映と扱わない。",
                   "3. 反映後は画面を再表示して確認し、結果を依頼元へ返す。", ""]
         text = "\n".join(lines)
         with self.lock, tempfile.TemporaryDirectory(prefix="screen-studio-") as tmp:
@@ -831,7 +848,7 @@ def make_handler(state):
         # ---- 編集室自身のエンドポイント
         def _studio(self, path, parsed):
             sub = path[len(PREFIX):]
-            if sub in ("/editor.js", "/editor.css", "/character-motion.css", "/shell.js", "/shell.css"):
+            if sub in ("/editor.js", "/editor.css", "/character-motion.css", "/object-motion.js", "/shell.js", "/shell.css"):
                 if self.command not in ("GET", "HEAD"):
                     raise StudioError(405, "method", "method not allowed")
                 fn = sub[1:]
@@ -855,7 +872,7 @@ def make_handler(state):
                 return self._json(200, {"ok": True, "project": state.project,
                                         "token": state.token, "entry": state.entry,
                                         "mode": state.mode, "ai": state.ai_summary(),
-                                        "capabilities": {"material_presets": True, "material_colors": True, "text_glow": True, "character_motion": True}})
+                                        "capabilities": {"material_presets": True, "material_colors": True, "text_glow": True, "character_motion": True, "object_motion": True}})
             if sub == "/api/ai/status":
                 self._check_fetch_site()
                 self._check_token()

@@ -24,6 +24,7 @@
   </div>
   <div class="spacer"></div>
   <button class="btn" id="characterBtn" disabled>キャラクター編集</button>
+  <button class="btn" id="objectMotionBtn" disabled>オブジェクトの動き</button>
   <span id="statusBadge" class="badge">未保存の変更なし</span>
   <button class="btn primary" id="saveBtn">保存</button>
   <button class="btn" id="copyBtn" title="指示文をコピーし、下のAIへの指示欄にも追加（送信はしません）">AIへ渡す指示をコピー</button>
@@ -37,6 +38,22 @@
     </div>
   </section>
   <aside class="panel" id="panel" aria-label="編集パネル">
+    <fieldset id="fsObjectMotion" hidden><legend>オブジェクトの動き</legend>
+      <div class="hint" id="objectMotionTarget">画面上の要素を選んでください。</div>
+      <label>動き <select id="objectMotionPreset" aria-label="オブジェクトの動き"></select></label>
+      <div class="hint" id="objectMotionDescription"></div>
+      <label>向き <select id="objectMotionDirection"><option value="left">左へ</option><option value="right">右へ</option><option value="up">上へ</option><option value="down">下へ</option></select></label>
+      <label>時間（秒） <input id="objectMotionDuration" type="number" min="0.1" max="30" step="0.1" value="1"></label>
+      <label>待ち時間（秒） <input id="objectMotionDelay" type="number" min="0" max="10" step="0.1" value="0"></label>
+      <label>強さ <input id="objectMotionStrength" type="range" min="0.25" max="2" step="0.25" value="1"></label>
+      <label>再生のきっかけ <select id="objectMotionTrigger"><option value="click">クリック・タップ</option><option value="load">画面の読込み</option><option value="hover">ポインターを重ねた時</option><option value="scroll">スクロールで画面に入った時</option></select></label>
+      <label>繰り返し <input id="objectMotionRepeat" type="checkbox"></label>
+      <div class="row wrap"><button id="objectMotionPeer" class="btn small">相手のオブジェクトを選ぶ</button><button id="objectMotionPeerClear" class="btn small">相手を解除</button></div>
+      <div class="hint" id="objectMotionPeerName">相手：なし</div>
+      <div class="row wrap"><button id="objectMotionApply" class="btn small primary">反映して再生</button><button id="objectMotionStop" class="btn small">停止</button><button id="objectMotionRemove" class="btn small">設定を外す</button></div>
+      <div class="hint" id="objectMotionStatus" role="status"></div>
+      <div class="hint">編集モードでは上のボタンで試せます。保存・再適用に対応。きっかけは操作確認モードと製品側で動作します。画面遷移の行き先やアプリの処理はAIへ渡して元コードへ反映します。</div>
+    </fieldset>
     <fieldset id="fsCharacter" hidden><legend>キャラクター編集</legend>
       <label>キャラクター <select id="characterTarget" aria-label="キャラクター"></select></label>
       <button class="btn small" id="characterPick">画面から選ぶ</button>

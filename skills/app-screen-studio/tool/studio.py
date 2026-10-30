@@ -66,7 +66,7 @@ _SIDES = ("Top", "Right", "Bottom", "Left")
 ALLOWED_STYLE_KEYS = frozenset(
     ["color", "backgroundColor", "fontSize", "fontFamily", "fontWeight", "fontStyle",
      "textAlign", "lineHeight", "letterSpacing", "opacity", "width", "height",
-     "translate", "rotate", "position", "left", "top", "zIndex", "objectFit", "boxShadow", "backgroundImage", "backdropFilter", "textShadow", "fill", "stroke", "strokeWidth",
+     "translate", "rotate", "animationName", "animationDuration", "animationTimingFunction", "animationIterationCount", "animationPlayState", "animationComposition", "transformBox", "transformOrigin", "position", "left", "top", "zIndex", "objectFit", "boxShadow", "backgroundImage", "backdropFilter", "textShadow", "fill", "stroke", "strokeWidth",
      "borderTopLeftRadius", "borderTopRightRadius", "borderBottomRightRadius",
      "borderBottomLeftRadius"]
     + [f"padding{s}" for s in _SIDES] + [f"margin{s}" for s in _SIDES]
@@ -589,6 +589,7 @@ class StudioState:
         lines += ["", "## 進め方", "",
                   "1. 編集JSONがあれば読み、各 edit の target(edit_id → id → selector)と before/after を元ソースへ反映する。",
                   "2. 一致しない要素は推測で当てず報告する。",
+                  "キャラクターの animationName が studio- で始まる場合、次のCSSから該当する @keyframes も製品側へ取り込む: " + os.path.join(STATIC_DIR, "character-motion.css"),
                   "3. 反映後は画面を再表示して確認し、結果を依頼元へ返す。", ""]
         text = "\n".join(lines)
         with self.lock, tempfile.TemporaryDirectory(prefix="screen-studio-") as tmp:
@@ -830,7 +831,7 @@ def make_handler(state):
         # ---- 編集室自身のエンドポイント
         def _studio(self, path, parsed):
             sub = path[len(PREFIX):]
-            if sub in ("/editor.js", "/editor.css", "/shell.js", "/shell.css"):
+            if sub in ("/editor.js", "/editor.css", "/character-motion.css", "/shell.js", "/shell.css"):
                 if self.command not in ("GET", "HEAD"):
                     raise StudioError(405, "method", "method not allowed")
                 fn = sub[1:]
@@ -854,7 +855,7 @@ def make_handler(state):
                 return self._json(200, {"ok": True, "project": state.project,
                                         "token": state.token, "entry": state.entry,
                                         "mode": state.mode, "ai": state.ai_summary(),
-                                        "capabilities": {"material_presets": True, "material_colors": True, "text_glow": True}})
+                                        "capabilities": {"material_presets": True, "material_colors": True, "text_glow": True, "character_motion": True}})
             if sub == "/api/ai/status":
                 self._check_fetch_site()
                 self._check_token()

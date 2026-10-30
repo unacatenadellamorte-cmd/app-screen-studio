@@ -23,6 +23,7 @@
     <button class="btn" id="redoBtn" title="やり直す (Ctrl+Y)">やり直す</button>
   </div>
   <div class="spacer"></div>
+  <button class="btn" id="characterBtn" disabled>キャラクター編集</button>
   <span id="statusBadge" class="badge">未保存の変更なし</span>
   <button class="btn primary" id="saveBtn">保存</button>
   <button class="btn" id="copyBtn" title="指示文をコピーし、下のAIへの指示欄にも追加（送信はしません）">AIへ渡す指示をコピー</button>
@@ -36,6 +37,20 @@
     </div>
   </section>
   <aside class="panel" id="panel" aria-label="編集パネル">
+    <fieldset id="fsCharacter" hidden><legend>キャラクター編集</legend>
+      <label>キャラクター <select id="characterTarget" aria-label="キャラクター"></select></label>
+      <button class="btn small" id="characterPick">画面から選ぶ</button>
+      <label>編集する部分 <select id="characterPart" aria-label="編集する部分"></select></label>
+      <label>部品の色 <input type="color" id="characterColor" value="#68bfa9" disabled></label>
+      <button class="btn small" id="characterImage" disabled>キャラクター画像を差し替え</button>
+      <label>動き <select id="characterMotion" disabled><option value="none">なし</option><option value="blink">まばたき</option><option value="talk">口の開閉</option><option value="sway">左右に揺れる</option><option value="bounce">上下に弾む</option><option value="breathe">呼吸</option></select></label>
+      <label>強さ <select id="characterStrength" disabled><option value="soft">弱い</option><option value="medium" selected>標準</option><option value="strong">強い</option></select></label>
+      <label>1周期の秒数 <input id="characterDuration" type="number" min="0.2" max="30" step="0.1" value="2" disabled></label>
+      <label>動きの再生 <input id="characterPlaying" type="checkbox" checked disabled></label>
+      <div class="hint">選択した部分だけに動きを適用。目・口は部品を選んで設定。停止中も動きの設定は保存されます。</div>
+      <div class="hint" id="characterNote" role="status"></div>
+      <div class="hint">位置・大きさ・回転は下の通常パネルか画面の選択枠で変更。元に戻す・保存にも対応。</div>
+    </fieldset>
     <fieldset id="fsMaterial" disabled><legend>材質プリセット</legend>
       <label>適用先 <select id="materialScope">
         <option value="selected">選択中の要素</option>

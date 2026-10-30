@@ -20,7 +20,7 @@
   var SIDES = ['Top', 'Right', 'Bottom', 'Left'];
   var STYLE_KEYS = ['color', 'backgroundColor', 'fontSize', 'fontFamily', 'fontWeight', 'fontStyle',
     'textAlign', 'lineHeight', 'letterSpacing', 'opacity', 'width', 'height', 'translate', 'rotate', 'objectFit',
-    'boxShadow', 'backgroundImage', 'backdropFilter', 'textShadow', 'fill', 'stroke', 'strokeWidth', 'position', 'left', 'top', 'zIndex', 'borderTopLeftRadius',
+    'boxShadow', 'backgroundImage', 'backdropFilter', 'textShadow', 'fill', 'stroke', 'strokeWidth', 'animationName', 'animationDuration', 'animationTimingFunction', 'animationIterationCount', 'animationPlayState', 'animationComposition', 'transformBox', 'transformOrigin', 'position', 'left', 'top', 'zIndex', 'borderTopLeftRadius',
     'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius'];
   ['padding', 'margin'].forEach(function (p) { SIDES.forEach(function (s) { STYLE_KEYS.push(p + s); }); });
   SIDES.forEach(function (s) { STYLE_KEYS.push('border' + s + 'Width', 'border' + s + 'Color', 'border' + s + 'Style'); });
@@ -30,6 +30,8 @@
   var SAFE_IMG_SRC = /^\s*(javascript|vbscript|data|file|blob):/i;
 
   var mode = 'edit';
+  var characterTargets = [], characterRoot = null, characterParts = [], characterPicking = false;
+  var CHARACTER_MARK = '[data-character],[data-edit-role="character"]';
   var selection = [];                 // 選択中の要素(最後が主)
   var hoverEl = null;
   var editing = null;                 // {el, before}
@@ -55,6 +57,14 @@
     if (!m || typeof m !== 'object' || typeof m.ss !== 'string') return;
     switch (m.ss) {
       case 'mode': setMode(m.mode === 'interact' ? 'interact' : 'edit'); break;
+      case 'characterOpen': openCharacters(); break;
+      case 'characterPick': characterPicking = true; toast('画面上のキャラクターをクリック。Escで中止'); break;
+      case 'characterSelect':
+        if (Number.isInteger(m.index) && characterTargets[m.index] && characterTargets[m.index].isConnected) chooseCharacter(characterTargets[m.index]);
+        break;
+      case 'characterPart':
+        if (Number.isInteger(m.index) && characterParts[m.index] && characterParts[m.index].isConnected) select(characterParts[m.index], false);
+        break;
       case 'undo': undo(); break;
       case 'redo': redo(); break;
       case 'set': applyFromPanel(m); break;
@@ -619,6 +629,43 @@
   function sendSelection() {
     var p = primary();
     post({ ss: 'selection', count: selection.length, info: p && p.isConnected ? describe(p) : null });
+    sendCharacter();
+  }
+  // キャラクターも通常の選択・履歴・保存経路を使う。
+  function characterLabel(el) {
+    return (el.getAttribute('data-character-name') || el.getAttribute('data-character-part') || el.getAttribute('aria-label') || el.getAttribute('alt') || el.id || el.localName).slice(0, 80);
+  }
+  function characterVisible(el) {
+    var r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+    return el !== host && !/^(script|style|link|meta|button|a|input|textarea|select)$/i.test(el.localName) && cs.visibility === 'visible' && cs.display !== 'none' && Number(cs.opacity) > 0 && r.width > 0 && r.height > 0;
+  }
+  function openCharacters() {
+    characterPicking = false;
+    var roots = Array.from(document.querySelectorAll(CHARACTER_MARK + ',img,svg,canvas'));
+    characterTargets = roots.filter(function (el) {
+      var name = [el.id, el.getAttribute('class'), el.getAttribute('alt'), el.getAttribute('aria-label')].join(' ');
+      return characterVisible(el) && (el.matches(CHARACTER_MARK) || /character|mascot|avatar|キャラ/i.test(name));
+    });
+    characterTargets = characterTargets.filter(function (el) { return !characterTargets.some(function (p) { return p !== el && p.contains(el); }); });
+    if (characterRoot && characterRoot.isConnected && characterVisible(characterRoot) && characterTargets.indexOf(characterRoot) === -1) characterTargets.push(characterRoot);
+    post({ ss: 'characters', items: characterTargets.map(characterLabel) });
+    if (characterTargets.length === 1) chooseCharacter(characterTargets[0]);
+    else if (characterTargets.indexOf(characterRoot) !== -1) chooseCharacter(characterRoot);
+    else { characterRoot = null; sendCharacter(); }
+  }
+  function chooseCharacter(el) {
+    characterPicking = false; characterRoot = el;
+    characterParts = [el].concat(Array.from(el.querySelectorAll('path,circle,ellipse,rect,polygon,polyline,line,[data-character-part]')).filter(characterVisible).slice(0, 100));
+    select(el, false);
+  }
+  function sendCharacter() {
+    if (!characterRoot || !characterRoot.isConnected) { post({ ss: 'character', active: false, parts: [], index: -1 }); return; }
+    var p = primary(), active = selection.length === 1 && characterParts.indexOf(p) !== -1;
+    post({ ss: 'character', active: active, index: characterTargets.indexOf(characterRoot),
+      parts: characterParts.map(function (el, i) { return i === 0 ? '全体' : characterLabel(el) + ' (' + i + ')'; }),
+      part: characterParts.indexOf(p), kind: characterRoot.localName,
+      canColor: active && p instanceof SVGElement && !/^(svg|image|use)$/i.test(p.localName),
+      canReplace: active && p.localName === 'img' });
   }
   function select(el, additive) {
     commitSession();
@@ -714,6 +761,15 @@
     if (editing && editing.el.contains(e.target)) return;   // 編集中の文字内はそのまま
     e.preventDefault(); e.stopPropagation();
     var t = pickTarget(e.target);
+    if (characterPicking) {
+      var root = t && (t.closest(CHARACTER_MARK) || t.closest('svg,img,canvas') || t);
+      if (root && root !== document.body && characterVisible(root)) {
+        if (characterTargets.indexOf(root) === -1) characterTargets.push(root);
+        post({ ss: 'characters', items: characterTargets.map(characterLabel) });
+        chooseCharacter(root);
+      } else toast('キャラクターの画像か入れ物を選んでください');
+      return;
+    }
     if (t) t = selection.find(function (el) { return el.contains(t); }) || t.closest('button, [role=button], a') || t;
     if (!t) return;
     if (editing) endTextEdit(true);
@@ -823,6 +879,7 @@
   }
   function onKeyDown(e) {
     if (mode !== 'edit') return;
+    if (characterPicking && e.key === 'Escape') { characterPicking = false; e.preventDefault(); toast('キャラクター選択を中止しました'); return; }
     var mod = e.ctrlKey || e.metaKey, k = (e.key || '').toLowerCase();
     if (editing) {
       if (e.key === 'Escape') { e.preventDefault(); endTextEdit(false); }
@@ -841,6 +898,7 @@
 
   function setMode(m) {
     mode = m;
+    if (m !== 'edit') characterPicking = false;
     if (m !== 'edit') { clearHold(); cancelSession(); drag = null; if (editing) endTextEdit(true); hoverEl = null; }
     document.documentElement.setAttribute('data-ss-mode', m);
     refresh();
@@ -894,6 +952,9 @@
 
   // ------------------------------------------------------------ 初期化
   function init() {
+    var motionSheet = document.createElement('link');
+    motionSheet.rel = 'stylesheet'; motionSheet.href = PREFIX + '/character-motion.css';
+    document.head.appendChild(motionSheet);
     buildOverlay();
     document.documentElement.setAttribute('data-ss-mode', mode);
     window.addEventListener('pointerdown', onPointerDown, true);

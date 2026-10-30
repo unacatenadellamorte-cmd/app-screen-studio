@@ -38,10 +38,59 @@
     if (m.ss === 'ready') onReady(m);
     else if (m.ss === 'state') { state = m; renderStatus(); }
     else if (m.ss === 'selection') { sel = m.info; selCount = m.count || 0; renderPanel(); }
+    else if (m.ss === 'characters') {
+      fillCharacterOptions($('characterTarget'), ['選択してください'].concat(m.items || []));
+    }
+    else if (m.ss === 'character') renderCharacter(m);
     else if (m.ss === 'toast') toast(m.text);
     else if (m.ss === 'edits') { var cb = pendingCollect[m.id]; delete pendingCollect[m.id]; if (cb) cb(m); }
     else if (m.ss === 'reapplied') onReapplied(m);
   });
+
+  function fillCharacterOptions(el, labels) {
+    el.replaceChildren();
+    labels.forEach(function (label, i) { var o = document.createElement('option'); o.value = String(i); o.textContent = label; el.appendChild(o); });
+  }
+  function renderCharacter(m) {
+    $('characterTarget').value = String(m.index + 1);
+    fillCharacterOptions($('characterPart'), m.parts || []);
+    $('characterPart').value = String(m.part == null ? -1 : m.part);
+    $('characterPart').disabled = !(m.parts && m.parts.length);
+    $('characterColor').disabled = !m.canColor;
+    $('characterImage').disabled = !m.canReplace;
+    ['characterMotion', 'characterStrength', 'characterDuration', 'characterPlaying'].forEach(function (id) { $(id).disabled = !m.active; });
+    if (m.active && sel) {
+      var motion = /^studio-(blink|talk|sway|bounce|breathe)-(soft|medium|strong)$/.exec(sel.computed.animationName || '');
+      $('characterMotion').value = motion ? motion[1] : 'none';
+      $('characterStrength').value = motion ? motion[2] : 'medium';
+      $('characterDuration').value = motion ? parseFloat(sel.computed.animationDuration) || 2 : 2;
+      $('characterPlaying').checked = sel.computed.animationPlayState !== 'paused';
+    }
+    if (m.canColor && sel) $('characterColor').value = rgbToHex(sel.computed.fill);
+    $('characterNote').textContent = !m.active ? '一覧か「画面から選ぶ」でキャラクターを選択してください。' :
+      m.kind === 'canvas' ? '描画されたキャラクターは外枠の位置・大きさを編集できます。表情・動きは元コードへの指示が必要です。' :
+      m.kind === 'img' ? '画像は差し替え・位置・大きさを編集できます。画像内の目や口は個別には選べません。' :
+      'SVGやHTMLは一覧で部品を選べます。色はSVG部品に対応。動きは選択した部品や全体に適用できます。';
+  }
+  $('characterBtn').addEventListener('click', function () {
+    setMode('edit'); $('fsCharacter').hidden = false;
+    $('panel').scrollTop = 0; send({ ss: 'characterOpen' });
+  });
+  $('characterTarget').addEventListener('change', function () { send({ ss: 'characterSelect', index: Number(this.value) - 1 }); });
+  $('characterPart').addEventListener('change', function () { send({ ss: 'characterPart', index: Number(this.value) }); });
+  $('characterPick').addEventListener('click', function () { setMode('edit'); send({ ss: 'characterPick' }); });
+  $('characterColor').addEventListener('change', function () { if (!this.disabled) pushStyle({ fill: this.value }, true); });
+  $('characterImage').addEventListener('click', function () { if (!this.disabled) pickImage('replace'); });
+  function applyCharacterMotion() {
+    if (!sel || $('characterMotion').disabled) return;
+    var kind = $('characterMotion').value, strength = $('characterStrength').value;
+    var seconds = Math.max(0.2, Math.min(30, Number($('characterDuration').value) || 2));
+    pushStyle({ animationName: kind === 'none' ? 'none' : 'studio-' + kind + '-' + strength,
+      animationDuration: seconds + 's', animationTimingFunction: 'ease-in-out', animationIterationCount: 'infinite',
+      animationPlayState: $('characterPlaying').checked ? 'running' : 'paused', animationComposition: 'add',
+      transformBox: 'fill-box', transformOrigin: 'center' }, true);
+  }
+  ['characterMotion', 'characterStrength', 'characterDuration', 'characterPlaying'].forEach(function (id) { $(id).addEventListener('change', applyCharacterMotion); });
 
   // ------------------------------------------------------------ 起動
   function init() {
@@ -54,6 +103,8 @@
       if (!s.ok) { toast('セッションを取得できません'); return; }
       session = s;
       var caps = s.capabilities || {};
+      $('characterBtn').disabled = !caps.character_motion;
+      $('characterBtn').title = caps.character_motion ? '全体・部品・動きを編集' : '未保存の内容を保護して画面編集室のサーバーを再起動してください';
       $('fsMaterial').disabled = !caps.material_colors;
       $('fsGlow').disabled = !caps.text_glow;
       if (!caps.material_colors) $('materialStatus').textContent = '旧版の起動です。AIに画面スキルの更新を依頼すると、材質と発光を保存できるようになります。';
@@ -70,7 +121,8 @@
   function onReady(m) {
     screen = { path: m.path, title: m.title };
     $('screenPath').textContent = '画面: ' + m.path + (m.title ? '(' + m.title + ')' : '');
-    sel = null; renderPanel();
+    sel = null; renderPanel(); renderCharacter({ active: false, index: -1, parts: [] });
+    if (!$('fsCharacter').hidden) send({ ss: 'characterOpen' });
     send({ ss: 'mode', mode: mode });
     if (m.path !== currentPath) { currentPath = m.path; checkSaved(); }
     if (history.replaceState) history.replaceState(null, '', PREFIX + '/shell?path=' + encodeURIComponent(m.path));
@@ -233,6 +285,7 @@
       '手順: JSONを読み、各edit.targetのedit_id→id→selectorの順で対象要素を特定(tagとtext_hintで照合)し、' +
       'before→afterの差分(text / style / attrs)を元ソースへ適用してください。source情報があればそれを優先します。' +
       '一致しない要素は推測で当てず報告してください。反映後は画面を再表示して確認します。\n' +
+      '動き: animationNameがstudio-で始まる場合は、画面スキル同梱のstatic/character-motion.cssから該当する@keyframesも製品へ取り込んでください。\n' +
       '注意: このJSONは見た目の編集記録で、製品コードには未反映です。';
     var prompt = $('aiPrompt');
     // 入力済みの文章は保持し、同じ保存内容の連打では重複させない。
@@ -663,6 +716,15 @@
     if (aiBusy || shotBusy || pendingUploads || !session || !ai.configured) return;      // 連打防止
     var prompt = $('aiPrompt').value;
     if (!prompt.trim()) { toast('依頼文を入力してください'); return; }
+    // 送る文章を下書きから分離し、処理中に書いた次の文章を消さない。
+    $('aiPrompt').value = '';
+    var promptRestored = false;
+    function restorePrompt() {
+      if (promptRestored) return;
+      promptRestored = true;
+      var next = $('aiPrompt').value;
+      $('aiPrompt').value = prompt + (next ? '\n\n' + next : '');
+    }
     aiBusy = true; renderAi(); setAiNote('送信登録しています。終わるまでお待ちください…');
     var sentAtts = atts.map(function (a) { return a.name; }), edits = null;
     collect().then(function (c) {
@@ -680,16 +742,18 @@
         $('savePath').textContent = r.saved_path; renderStatus();
       }
       if (r.ok) {
-        if ($('aiPrompt').value === prompt) $('aiPrompt').value = '';
         atts = atts.filter(function (a) { return sentAtts.indexOf(a.name) === -1; }); renderThumbs();
         setAiNote('送信登録しました(相手の受領・完了は未確認です)。依頼文: ' + r.request_file);
         toast('送信登録しました(受領は未確認)');
       } else if (r.ambiguous) {
+        restorePrompt();
         setAiNote('送信できたか不明です(' + (r.message || r.code) + ')。受信側を確認してから、必要なら自分で「AIへ送信」を押し直してください。自動では再送しません。入力と添付は残してあります。', true);
       } else {
+        restorePrompt();
         setAiNote('送信できませんでした: ' + (r.message || r.code) + '。入力と添付は残してあります。', true);
       }
     }).catch(function () {
+      restorePrompt();
       setAiNote('送信の結果を受け取れませんでした。送れたか不明です。受信側を確認してから、必要なら自分で押し直してください(自動再送なし)。入力と添付は残してあります。', true);
     }).then(function () { aiBusy = false; renderAi(); });
   });
@@ -717,7 +781,7 @@
       .then(function () { aiBusy = false; renderAi(); });
   });
   window.addEventListener('beforeunload', function (e) {
-    if ($('aiPrompt').value.trim() || atts.length) { e.preventDefault(); e.returnValue = ''; }
+    if (aiBusy || $('aiPrompt').value.trim() || atts.length) { e.preventDefault(); e.returnValue = ''; }
   });
 
   document.querySelectorAll('[data-layer]').forEach(function (button) {
